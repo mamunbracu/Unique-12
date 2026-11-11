@@ -978,10 +978,13 @@ const seedRules=()=>SEED_R.map((r,i)=>({id:'r'+(i+1),section:r[0],order:r[1],tit
 function seedData(){const members=SEED_M.map((r,i)=>({id:'m'+(i+1),memberNo:i+1,name:r[0],nameBn:r[1],fatherName:r[2],fatherNameBn:r[3],nominee:r[4],nomineeBn:r[5],nomineeRelation:r[6],share:100,phone:'',email:'',joinDate:'2022-05-03',bankId:'cash',status:'Active',photo:'',occupation:'',address:'',note:''}));
   return normalize({members,rules:seedRules(),settings:{...DEF_SETTINGS}})}
 /* ================= INIT ================= */
+function loaderMsg(html){const L=document.getElementById('loader');if(!L)return;let m=L.querySelector('.lmsg');if(!m){m=document.createElement('div');m.className='lmsg';m.style.cssText='max-width:520px;margin:18px auto 0;padding:14px 16px;border-radius:12px;font-size:13px;line-height:1.6;background:rgba(255,93,115,.12);border:1px solid rgba(255,93,115,.35);text-align:left';L.firstElementChild.appendChild(m)}m.innerHTML=html}
+window.addEventListener('error',e=>loaderMsg('<b>Error:</b> '+esc(e.message||'Unknown error')));
 (async function init(){
   $('.menu-btn').innerHTML=icon('menu');$('#themeBtn').innerHTML=icon('palette');$('#loginBtn').innerHTML=icon('lock')+'<span class="hide-sm">Admin Login</span>';$('#logoutBtn').innerHTML=icon('logout')+'<span class="hide-sm">Logout</span>';$('#adminChip').innerHTML=icon('unlock')+' Admin';$('#viewChip').innerHTML=icon('eye')+' Member view';
   let t='dark';try{t=localStorage.getItem(LST)||'dark'}catch(e){}applyTheme(t);
-  try{const d=await API.load();if(d&&Array.isArray(d.members)&&(d.members.length||IS_GAS))DB=normalize(d);else{DB=seedData();persist()}}catch(e){DB=seedData();setTimeout(()=>toast('Could not load data: '+errMsg(e),'bad'),500)}
+  const tmo=setTimeout(()=>loaderMsg('Still waiting for Google Sheets… If this does not finish, run <b>setup</b> in Apps Script, deploy a <b>New version</b>, and open this link in an Incognito window.'),20000);
+  try{const d=await API.load();clearTimeout(tmo);if(d&&Array.isArray(d.members)&&(d.members.length||IS_GAS))DB=normalize(d);else{DB=seedData();persist()}}catch(e){clearTimeout(tmo);DB=seedData();setTimeout(()=>toast('Could not load data from Google Sheets: '+errMsg(e),'bad'),500);if(IS_GAS){loaderMsg('<b>Could not load data from Google Sheets:</b><br>'+esc(errMsg(e))+'<br><br>Fix: in Apps Script run <b>setup</b> and allow access, then Deploy → Manage deployments → ✏️ → New version.');return}}
   page=(location.hash||'#overview').slice(1);if(page==='banks')page='finance';if(!TITLES[page])page='overview';render();
   const L=$('#loader');L.style.opacity='0';setTimeout(()=>L.remove(),400);
   if(IS_GAS&&!DB.members.length)setTimeout(()=>toast('Database is empty — log in as admin to set up the 12 members','warn'),800)})();
