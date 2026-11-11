@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ⚠️ Change this to YOUR admin email (lowercase), the same as ADMIN_EMAIL in index.html
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'your-admin-email@gmail.com';
+    }
+
+    // Uploaded files: ID cards are private (admin only); other documents are viewable by members
+    match /blobs/{id} {
+      allow read: if isAdmin() || resource.data.private == false;
+      allow write: if isAdmin();
+    }
+
+    // Everything else (members, payments, banks, FDR, expenses, assets, resolution…):
+    // everyone can view, only the admin can add / edit / delete
+    match /{collection}/{id} {
+      allow read: if collection != 'blobs';
+      allow write: if isAdmin();
+    }
+  }
+}

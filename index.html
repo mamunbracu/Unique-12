@@ -364,6 +364,22 @@ const DEF_SETTINGS={name:'Unique Twelve',tagline:'ইউনিক-১২ · Savi
 let DB={members:[],payments:[],banks:[],expenses:[],assets:[],transfers:[],files:[],rules:[],income:[],settings:{...DEF_SETTINGS}};
 let isAdmin=false, adminPw='', page='overview', charts={};
 const IS_GAS=!!(window.google&&google.script&&google.script.run);
+/* ======================================================================
+   FIREBASE SETUP — paste your own values here (see README → "Firebase").
+   Leave apiKey empty to run in demo mode (data saved in this browser only).
+   ====================================================================== */
+const FIREBASE_CONFIG={
+  apiKey:"",
+  authDomain:"",
+  projectId:"",
+  storageBucket:"",
+  messagingSenderId:"",
+  appId:""
+};
+const ADMIN_EMAIL="";   // the email of the admin user you create in Firebase → Authentication
+/* ====================================================================== */
+const IS_FB=!IS_GAS&&!!FIREBASE_CONFIG.apiKey;
+const LIVE=IS_GAS||IS_FB;
 const LS='uniqueTwelve_v3', LST='uniqueTwelve_theme';
 const S=()=>DB.settings;
 let qp={year:+todayStr().slice(0,4),month:curMonth(),type:'Monthly',mode:'monthly',date:todayStr(),bank:'',sel:new Set(),dmode:'due',gdate:todayStr(),gbank:''};
@@ -384,7 +400,30 @@ const API={
   async upload(b64,mime,name,kind,pub){return gas('apiUpload',adminPw,b64,mime,name,kind,!!pub)},
   async trash(id){if(IS_GAS&&id)try{await gas('apiTrashFile',adminPw,id)}catch(e){}}
 };
-function persist(){if(!IS_GAS)try{localStorage.setItem(LS,JSON.stringify(DB))}catch(e){}}
+/* ---- Firebase adapter (Firestore + Auth, free Spark plan) ---- */
+let fdb,fauth;const FB_V='10.12.2',FB_TBL=['members','payments','banks','expenses','assets','transfers','files','rules','income'];
+function loadScript(src){return new Promise((res,rej)=>{const sc=document.createElement('script');sc.src=src;sc.onload=res;sc.onerror=()=>rej(new Error('Could not load '+src+' — check your internet connection'));document.head.appendChild(sc)})}
+async function fbInit(){for(const m of['app','auth','firestore'])await loadScript(`https://www.gstatic.com/firebasejs/${FB_V}/firebase-${m}-compat.js`);
+  firebase.initializeApp(FIREBASE_CONFIG);fdb=firebase.firestore();fauth=firebase.auth();
+  await new Promise(r=>{const off=fauth.onAuthStateChanged(u=>{off();if(u&&(!ADMIN_EMAIL||String(u.email).toLowerCase()===ADMIN_EMAIL.toLowerCase()))isAdmin=true;r()})})}
+const fbClean=o=>JSON.parse(JSON.stringify(o));
+async function fbBatch(ops){for(let i=0;i<ops.length;i+=400){const b=fdb.batch();ops.slice(i,i+400).forEach(f=>f(b));await b.commit()}}
+const FB={
+  async load(){const out={};await Promise.all(FB_TBL.map(async t=>{const q=await fdb.collection(t).get();out[t]=q.docs.map(d=>({...d.data(),id:d.id}))}));const st=await fdb.collection('meta').doc('settings').get();out.settings=st.exists?st.data():null;return out},
+  async login(pw){if(!ADMIN_EMAIL)throw new Error('ADMIN_EMAIL is empty in index.html');try{await fauth.signInWithEmailAndPassword(ADMIN_EMAIL,pw);return true}catch(e){if(/password|credential|user-not-found|invalid-email|too-many/i.test((e.code||'')+e.message)){if(/too-many/.test(e.code||''))throw new Error('Too many wrong attempts — wait a few minutes');return false}throw e}},
+  async save(t,r){await fdb.collection(t).doc(r.id).set(fbClean(r))},
+  async saveMany(t,rs){await fbBatch(rs.map(r=>b=>b.set(fdb.collection(t).doc(r.id),fbClean(r))))},
+  async del(t,ids){await fbBatch([].concat(ids).map(id=>b=>b.delete(fdb.collection(t).doc(id))))},
+  async settings(x){const c={...x};delete c.adminPassword;await fdb.collection('meta').doc('settings').set(fbClean(c))},
+  async restore(d){for(const t of FB_TBL){const q=await fdb.collection(t).get();await fbBatch(q.docs.map(x=>b=>b.delete(x.ref)));await fbBatch((d[t]||[]).map(r=>b=>b.set(fdb.collection(t).doc(r.id),fbClean(r))))}if(d.settings)await FB.settings(d.settings)},
+  async changePw(n){if(String(n).length<6)throw new Error('Firebase passwords need at least 6 characters');await fauth.currentUser.updatePassword(n)},
+  async upload(b64,mime,name,kind,pub){const ref=fdb.collection('blobs').doc();await ref.set({data:b64,mime,name,kind,private:!pub,uploadedAt:todayStr()});return{fileId:ref.id}},
+  async getFile(id){const d=await fdb.collection('blobs').doc(id).get();if(!d.exists)throw new Error('File not found');const x=d.data();return{mime:x.mime,b64:x.data,name:x.name}},
+  async trash(id){if(id)try{await fdb.collection('blobs').doc(id).delete()}catch(e){}}
+};
+API.getFile=id=>gas('apiGetFile',id,adminPw);
+if(IS_FB)Object.assign(API,FB);
+function persist(){if(!LIVE)try{localStorage.setItem(LS,JSON.stringify(DB))}catch(e){}}
 function normalize(d){d=d||{};const o={};['members','payments','banks','expenses','assets','transfers','files','rules','income'].forEach(k=>o[k]=Array.isArray(d[k])?d[k]:[]);
   o.settings={...DEF_SETTINGS,...(d.settings||{})};if(!Array.isArray(o.settings.rates)||!o.settings.rates.length)o.settings.rates=DEF_SETTINGS.rates;
   if(!o.banks.find(b=>b.id==='cash'))o.banks.unshift({id:'cash',name:'Cash in Hand',type:'Cash',accountNo:'',branch:'',openingBalance:0,rate:0,openDate:'',maturity:'',note:''});
@@ -464,7 +503,7 @@ function render(){_ts=undefined;
   $('#brandName').textContent=S().name;$('#logoTxt').textContent=initials(S().name).slice(0,2)+(S().name.match(/\d+/)||[''])[0];
   $('#brandTag').textContent=`${S().tagline} · ${DB.members.length} Members`;
   buildNav();const[t,s]=TITLES[page];$('#pageTitle').textContent=t;$('#pageSub').textContent=s;
-  $('#srcInfo').innerHTML=IS_GAS?`<span><span class="dot"></span>Google Sheets · Live</span>`:`<span><span class="dot" style="background:var(--warn)"></span>Demo mode · Browser storage</span>`;
+  $('#srcInfo').innerHTML=IS_FB?`<span><span class="dot"></span>Firebase · Live</span>`:IS_GAS?`<span><span class="dot"></span>Google Sheets · Live</span>`:`<span><span class="dot" style="background:var(--warn)"></span>Demo mode · Browser storage</span>`;
   $('#roleInfo').innerHTML=isAdmin?`<span class="good" style="font-weight:700">${icon('unlock')} Admin access</span>`:`<span>${icon('eye')} Member view (read-only)</span>`;
   Object.values(charts).forEach(c=>{try{c.destroy()}catch(e){}});charts={};
   $('#view').innerHTML=PAGES[page]();(AFTER[page]||(()=>{}))();animateCounts();}
@@ -539,13 +578,13 @@ async function delMember(id){if(!guard())return;const m=DB.members.find(x=>x.id=
   if(ps.length)await remove('payments',ps.map(p=>p.id),'');remove('members',id,'Member deleted')}
 
 /* ================= LOGIN / THEME ================= */
-function openLogin(){openModal('Admin Login',`<form id="lf"><div style="text-align:center;margin-bottom:16px"><div class="logo" style="margin:0 auto 10px;width:54px;height:54px">${icon('lock')}</div><div class="muted">Admin can add, edit and delete every record.<br>Members can view everything read-only.</div></div><label class="fld"><span>Password</span><input type="password" id="pw" autocomplete="current-password" required autofocus></label>${IS_GAS?'':`<div class="sub" style="margin-top:8px">Demo password: <b>1535</b></div>`}<div class="modal-actions"><button type="button" class="btn ghost" data-c>Cancel</button><button class="btn primary">${icon('unlock')} Login</button></div></form>`,{after:b=>{
+function openLogin(){openModal('Admin Login',`<form id="lf"><div style="text-align:center;margin-bottom:16px"><div class="logo" style="margin:0 auto 10px;width:54px;height:54px">${icon('lock')}</div><div class="muted">Admin can add, edit and delete every record.<br>Members can view everything read-only.</div></div><label class="fld"><span>Password</span><input type="password" id="pw" autocomplete="current-password" required autofocus></label>${LIVE?'':`<div class="sub" style="margin-top:8px">Demo password: <b>1535</b></div>`}<div class="modal-actions"><button type="button" class="btn ghost" data-c>Cancel</button><button class="btn primary">${icon('unlock')} Login</button></div></form>`,{after:b=>{
   b.querySelector('[data-c]').onclick=()=>closeModal();setTimeout(()=>b.querySelector('#pw')?.focus(),300);
   b.querySelector('#lf').onsubmit=async e=>{e.preventDefault();const pw=b.querySelector('#pw').value;busy(true);try{const ok=await API.login(pw);if(ok){isAdmin=true;adminPw=pw;closeModal();refresh();toast('Welcome, Admin');firstSetup()}else{toast('Wrong password','bad');b.querySelector('#pw').value=''}}catch(er){toast(errMsg(er),'bad')}finally{busy(false)}}}})}
 async function firstSetup(){if(DB.members.length)return;
   if(!await confirmBox('The database is empty. Create the 12 Unique-12 members (with nominees) and the resolution now? All money values start at ৳0 — you can then enter or import your records.','Set up',false))return;
   const keep=S().adminPassword;await run(async()=>{const d=seedData();d.settings={...S(),...d.settings,adminPassword:keep};await API.restore(d);DB=d},'Starting data created')}
-function logout(){isAdmin=false;adminPw='';refresh();toast('Switched to member view')}
+function logout(){if(IS_FB&&fauth)fauth.signOut().catch(()=>{});isAdmin=false;adminPw='';refresh();toast('Switched to member view')}
 const THEMES=[['dark','Dark Glass','linear-gradient(135deg,#3b5bfd,#a64bff)'],['glass','Glassmorphism','linear-gradient(135deg,#8ea8ff,#f7a1d8)'],['royal','Royal Blue','linear-gradient(135deg,#1d4ed8,#f5c542)'],['emerald','Emerald Night','linear-gradient(135deg,#0f9d6b,#a3e635)'],['light','Clean Light','linear-gradient(135deg,#ffffff,#c7d2fe)']];
 function applyTheme(t){document.documentElement.setAttribute('data-theme',t);document.body.setAttribute('data-theme',t);try{localStorage.setItem(LST,t)}catch(e){}
   $('#themePop').innerHTML='<div class="sub" style="padding:4px 10px 6px">Theme</div>'+THEMES.map(([k,n,g])=>`<button class="${k===t?'on':''}" onclick="applyTheme('${k}');toggleThemePop(false)"><span class="sw" style="background:${g}"></span>${n}${k===t?' '+icon('check'):''}</button>`).join('');
@@ -755,7 +794,7 @@ function idSection(m){return`<div class="idgrid">${['member-id','nominee-id'].ma
   return`<div class="idcard ${f?'has':''}"><div class="th">${img?`<img src="${esc(f.url)}" alt="">`:icon('idc')}</div><div class="grow"><b>${ID_LABEL[cat]}</b><small>${esc(who)} · ${f?'Uploaded '+dLabel(f.uploadedAt):'Not uploaded'}</small></div><div class="acts">${f?(isAdmin?`<button class="btn ghost sm" onclick="openFile('${f.id}')">${icon('eye')} View</button>`:`<span class="badge b-paid">${icon('check')} On file</span>`):''}<button class="btn ${f?'ghost':'primary'} sm admin-only" onclick="idUpload('${m.id}','${cat}')">${icon('upload')} ${f?'Replace':'Upload'}</button>${f?`<button class="icon-btn sm admin-only" onclick="delFile('${f.id}')">${icon('trash')}</button>`:''}</div></div>`}).join('')}</div><div class="sub" style="margin-top:8px">${icon('lock')} ID cards are private: only the admin can open them.</div>`}
 async function idUpload(mid,cat){const old=DB.files.filter(x=>x.linkType==='member'&&x.linkId===mid&&x.category===cat);const rec=await uploadDoc('member',mid,cat);if(rec&&old.length){await remove('files',old.map(o=>o.id),'');old.forEach(o=>o.fileId&&API.trash(o.fileId))}}
 const fsize=b=>{b=+b||0;return b>=1048576?(b/1048576).toFixed(1)+' MB':b>=1024?Math.round(b/1024)+' KB':b+' B'};
-const MAX_UP=IS_GAS?15*1048576:1.5*1048576;
+const MAX_UP=IS_GAS?15*1048576:IS_FB?680*1024:1.5*1048576;
 function linkName(f){const t=f.linkType,id=f.linkId;if(t==='member')return DB.members.find(x=>x.id===id)?.name;if(t==='asset')return DB.assets.find(x=>x.id===id)?.name;if(t==='expense'){const e=DB.expenses.find(x=>x.id===id);return e&&e.category+' · '+dLabel(e.date)}if(t==='bank')return bankName(id);return'General'}
 function fileTile(f){const img=(f.mime||'').startsWith('image/')&&(f.url||'').startsWith('data:');
   return`<div class="ftile" onclick="openFile('${f.id}')"><div class="th">${img?`<img src="${esc(f.url)}" alt="">`:`${icon((f.mime||'').startsWith('image/')?'image':'file')}<span class="ext">${esc((f.name.split('.').pop()||'').toUpperCase().slice(0,4))}</span>`}</div><div class="nm" title="${esc(f.name)}">${esc(f.name)}</div><div class="mt">${fsize(f.size)} · ${dLabel(f.uploadedAt)}</div><button class="icon-btn sm del admin-only" title="Delete" onclick="event.stopPropagation();delFile('${f.id}')">${icon('trash')}</button></div>`}
@@ -780,13 +819,13 @@ async function uploadDoc(t,id,cat=''){if(!guard())return;const f=await pickFile(
   try{if(mime.startsWith('image/')&&!/gif|svg/.test(mime)&&f.size>800*1024){data=await resizeImage(f,1800,.82);mime='image/jpeg';name=name.replace(/\.\w+$/,'')+'.jpg'}else data=await readAsDataURL(f);
     const size=b64size(data);if(size>MAX_UP){toast(`File too large — max ${fsize(MAX_UP)}${IS_GAS?'':' in demo mode'}`,'warn');return}
     const rec={id:uid(),fileId:'',name,mime,size,linkType:t,linkId:id,category:cat,uploadedAt:todayStr(),url:'',note:''};
-    if(IS_GAS){const r=await API.upload(data.split(',')[1],mime,name,cat?'ID Cards':(LINK_LABEL[t]||'General'),false);rec.fileId=r.fileId}else rec.url=data;
+    if(LIVE){const r=await API.upload(data.split(',')[1],mime,name,cat?'ID Cards':(LINK_LABEL[t]||'General'),IS_FB&&!cat);rec.fileId=r.fileId}else rec.url=data;
     busy(false);if(await upsert('files',rec,'Uploaded '+name))return rec}catch(e){toast('Upload failed: '+errMsg(e),'bad')}finally{busy(false)}}
 async function delFile(id){if(!guard())return;const f=DB.files.find(x=>x.id===id);if(!f)return;if(!await confirmBox(`Delete <b>${esc(f.name)}</b>?${f.fileId?' It will be moved to the Google Drive trash.':''}`))return;const ok=await remove('files',id,'File deleted');if(ok&&f.fileId)API.trash(f.fileId)}
 function dataText(d){const k=d.indexOf(','),h=d.slice(0,k),b=d.slice(k+1);if(!/;base64/.test(h))return decodeURIComponent(b);const s=atob(b),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return new TextDecoder().decode(u)}
 async function openFile(id){const f=DB.files.find(x=>x.id===id);if(!f)return;if(isIdFile(f)&&!isAdmin){toast('ID cards can only be opened by the admin','warn');openLogin();return}let data=f.url||'';
-  if(!data.startsWith('data:')){if(!(IS_GAS&&f.fileId)){if(data)window.open(data,'_blank');else toast('File not available','warn');return}
-    busy(true);try{const r=await gas('apiGetFile',f.fileId,adminPw);data='data:'+r.mime+';base64,'+r.b64}catch(e){toast(errMsg(e),'bad');return}finally{busy(false)}}
+  if(!data.startsWith('data:')){if(!(LIVE&&f.fileId)){if(data)window.open(data,'_blank');else toast('File not available','warn');return}
+    busy(true);try{const r=await API.getFile(f.fileId);data='data:'+r.mime+';base64,'+r.b64}catch(e){toast(errMsg(e),'bad');return}finally{busy(false)}}
   const mime=f.mime||'',isImg=mime.startsWith('image/'),isPdf=mime==='application/pdf'||/\.pdf$/i.test(f.name),isTxt=mime.startsWith('text/');
   let blobUrl='';try{blobUrl=URL.createObjectURL(dataURLtoBlob(data))}catch(e){}
   openModal(esc(f.name),`<div class="preview">${isImg?`<img src="${esc(data)}" alt="">`:isPdf?`<iframe src="${blobUrl||data}"></iframe>`:isTxt?`<pre>${esc(dataText(data))}</pre>`:`<div class="empty">${icon('file')}<p style="margin-top:8px">No preview for this file type — download it to open.</p></div>`}</div>
@@ -925,7 +964,7 @@ PAGES.settings=()=>{if(!isAdmin)return`<div class="glass card empty" style="padd
     <h2 style="margin:20px 0 6px">Monthly rate history</h2><div class="sub" style="margin-bottom:10px">The rate applies from that month onward (e.g. ৳2,000 from Jul 2022, ৳3,000 later).</div><div id="rates">${s.rates.map((r,i)=>rateRow(r,i)).join('')}</div>
     <button type="button" class="btn ghost sm" onclick="addRateRow()">${icon('plus')} Add rate change</button><div class="modal-actions"><button class="btn primary">${icon('check')} Save settings</button></div></form></div>
   <div style="display:flex;flex-direction:column;gap:16px"><div class="glass card"><h2 style="margin-bottom:12px">Admin password</h2><form id="pf" class="toolbar"><input type="password" id="npw" class="grow" placeholder="New password (min 4 chars)" minlength="4" required style="flex:1"><button class="btn primary">Change</button></form></div>
-  <div class="glass card"><h2 style="margin-bottom:6px">Data source</h2><p class="sub" style="margin-bottom:12px;line-height:1.6">${IS_GAS?'Connected to Google Sheets through Apps Script. Every change is saved instantly to your spreadsheet (one sheet per table).':'Running as a standalone demo — data is saved in this browser only. Deploy with the included Code.gs to store data permanently in Google Sheets for free.'}</p>
+  <div class="glass card"><h2 style="margin-bottom:6px">Data source</h2><p class="sub" style="margin-bottom:12px;line-height:1.6">${IS_FB?'Connected to Firebase (Firestore). Every change is saved instantly and everyone sees the same data.':IS_GAS?'Connected to Google Sheets through Apps Script. Every change is saved instantly to your spreadsheet (one sheet per table).':'Running as a standalone demo — data is saved in this browser only. Deploy with the included Code.gs to store data permanently in Google Sheets for free.'}</p>
     <div class="toolbar"><button class="btn primary" onclick="importExcel()">${icon('xls')} Import Excel</button><button class="btn ghost" onclick="downloadTemplate()">${icon('download')} Excel template</button><button class="btn ghost" onclick="resetStart()">${icon('users')} Reset to starting data</button><button class="btn danger" onclick="clearAll()">${icon('trash')} Clear everything</button></div></div>
   <div class="glass card"><h2 style="margin-bottom:6px">Quick start</h2><ol class="sub" style="line-height:1.9;padding-left:18px"><li>Set the start month and rate history here (when did ৳2,000 become ৳3,000?).</li><li>Members → check names, add phone numbers, photos and ID cards.</li><li>Download the Excel template, fill 2022–now, then Import Excel.</li><li>Banks & FDR → add your accounts and opening balances.</li><li>Quick Pay → record each month's collection in one click.</li><li>Assets / Expenses → log purchases and spending.</li><li>Reports → download a JSON backup regularly.</li></ol></div></div></div>`};
 const rateRow=(r,i)=>`<div class="toolbar rate-row" style="margin-bottom:8px"><input type="month" class="rf" value="${r.from}" style="flex:1" required><input type="number" class="ra" value="${r.amount}" min="0" style="flex:1" required><button type="button" class="icon-btn" onclick="this.parentElement.remove()">${icon('trash')}</button></div>`;
@@ -983,11 +1022,11 @@ window.addEventListener('error',e=>loaderMsg('<b>Error:</b> '+esc(e.message||'Un
 (async function init(){
   $('.menu-btn').innerHTML=icon('menu');$('#themeBtn').innerHTML=icon('palette');$('#loginBtn').innerHTML=icon('lock')+'<span class="hide-sm">Admin Login</span>';$('#logoutBtn').innerHTML=icon('logout')+'<span class="hide-sm">Logout</span>';$('#adminChip').innerHTML=icon('unlock')+' Admin';$('#viewChip').innerHTML=icon('eye')+' Member view';
   let t='dark';try{t=localStorage.getItem(LST)||'dark'}catch(e){}applyTheme(t);
-  const tmo=setTimeout(()=>loaderMsg('Still waiting for Google Sheets… If this does not finish, run <b>setup</b> in Apps Script, deploy a <b>New version</b>, and open this link in an Incognito window.'),20000);
-  try{const d=await API.load();clearTimeout(tmo);if(d&&Array.isArray(d.members)&&(d.members.length||IS_GAS))DB=normalize(d);else{DB=seedData();persist()}}catch(e){clearTimeout(tmo);DB=seedData();setTimeout(()=>toast('Could not load data from Google Sheets: '+errMsg(e),'bad'),500);if(IS_GAS){loaderMsg('<b>Could not load data from Google Sheets:</b><br>'+esc(errMsg(e))+'<br><br>Fix: in Apps Script run <b>setup</b> and allow access, then Deploy → Manage deployments → ✏️ → New version.');return}}
+  const tmo=setTimeout(()=>loaderMsg(IS_FB?'Still waiting for Firebase… Check the FIREBASE_CONFIG values in index.html and that Firestore is created.':'Still waiting for Google Sheets… If this does not finish, run <b>setup</b> in Apps Script, deploy a <b>New version</b>, and open this link in an Incognito window.'),20000);
+  try{if(IS_FB)await fbInit();const d=await API.load();clearTimeout(tmo);if(d&&Array.isArray(d.members)&&(d.members.length||LIVE))DB=normalize(d);else{DB=seedData();persist()}}catch(e){clearTimeout(tmo);DB=seedData();setTimeout(()=>toast('Could not load data from Google Sheets: '+errMsg(e),'bad'),500);if(IS_FB){loaderMsg('<b>Could not connect to Firebase:</b><br>'+esc(errMsg(e))+'<br><br>Check: FIREBASE_CONFIG in index.html, Firestore database created, and the security rules published.');return}if(IS_GAS){loaderMsg('<b>Could not load data from Google Sheets:</b><br>'+esc(errMsg(e))+'<br><br>Fix: in Apps Script run <b>setup</b> and allow access, then Deploy → Manage deployments → ✏️ → New version.');return}}
   page=(location.hash||'#overview').slice(1);if(page==='banks')page='finance';if(!TITLES[page])page='overview';render();
   const L=$('#loader');L.style.opacity='0';setTimeout(()=>L.remove(),400);
-  if(IS_GAS&&!DB.members.length)setTimeout(()=>toast('Database is empty — log in as admin to set up the 12 members','warn'),800)})();
+  if(LIVE&&isAdmin&&!DB.members.length)setTimeout(firstSetup,600);else if(LIVE&&!DB.members.length)setTimeout(()=>toast('Database is empty — log in as admin to set up the 12 members','warn'),800)})();
 </script>
 </body>
 </html>
