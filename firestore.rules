@@ -2,22 +2,31 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ⚠️ Change this to YOUR admin email (lowercase), the same as ADMIN_EMAIL in index.html
-    function isAdmin() {
-      return request.auth != null && request.auth.token.email == 'unique122022@gmail.com';
-    }
+    // Who is logged in (the dashboard creates the member account automatically;
+    // the backup account is created from Settings → "Create backup account")
+    function signedIn() { return request.auth != null; }
+    function isAdmin()  { return signedIn() && request.auth.token.email == 'unique122022@gmail.com'; }
+    function isBackup() { return signedIn() && request.auth.token.email == 'backup@unique-twelve.app'; }
+    function isMember() { return signedIn() && request.auth.token.email == 'members@unique-twelve.app'; }
+    function canView()  { return isAdmin() || isMember() || isBackup(); }
 
-    // Uploaded files: ID cards are private (admin only); other documents are viewable by members
+    // Uploaded files: ID cards are private (admin + backup only); other documents members can view
     match /blobs/{id} {
-      allow read: if isAdmin() || resource.data.private == false;
+      allow read: if isAdmin() || isBackup() || (isMember() && resource.data.private == false);
       allow write: if isAdmin();
     }
 
-    // Everything else (members, payments, banks, FDR, expenses, assets, resolution…):
-    // everyone can view, only the admin can add / edit / delete
+    // Activity log: everyone logged in can read it; only the admin can add entries; nobody can edit or delete
+    match /activity/{id} {
+      allow read: if canView();
+      allow create: if isAdmin();
+    }
+
+    // Everything else (members, payments, banks, FDR, income, expenses, assets, resolution, settings):
+    // members can view, only the admin can add / edit / delete. Nothing is visible without a password.
     match /{collection}/{id} {
-      allow read: if collection != 'blobs';
-      allow write: if isAdmin();
+      allow read: if canView() && collection != 'blobs' && collection != 'activity';
+      allow write: if isAdmin() && collection != 'blobs' && collection != 'activity';
     }
   }
 }

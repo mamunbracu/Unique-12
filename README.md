@@ -16,7 +16,10 @@ It runs on Google Sheets, Google Drive and Google Apps Script, so storage and ho
 - Member and nominee ID card uploads (admin-only viewing)
 - Resolution (চুক্তিনামা / রেজুলেশন) in English and Bangla tabs, editable by the admin
 - Excel template + import for back-filling 2022 → today
-- Read-only member view; admin login (default password `1535` — change it in Settings)
+- Lock screen: members open the site with the member password (default `1535`); admin logs in with the Firebase admin password
+- Activity log of every change with one-click undo; typed `DELETE` + automatic backup before Clear / Reset / Restore
+- Admin password change requires the current password and a strong new one
+- Monthly automatic backup to a private GitHub repo (`Unique-12-backups`)
 
 ## Option A (recommended): Firebase + GitHub Pages — free, no card, no warnings
 

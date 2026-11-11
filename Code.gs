@@ -38,7 +38,8 @@ const TABLES = {
   transfers: ['id','date','fromBankId','toBankId','amount','note'],
   files:     ['id','fileId','name','mime','size','linkType','linkId','category','uploadedAt','url','note'],
   rules:     ['id','section','order','titleEn','titleBn','textEn','textBn'],
-  income:    ['id','date','category','amount','bankId','note']
+  income:    ['id','date','category','amount','bankId','note'],
+  activity:  ['id','at','by','action','table','summary','data']
 };
 const NUMERIC = { memberNo:1, share:1, size:1, order:1, amount:1, openingBalance:1, rate:1, cost:1, currentValue:1, saleAmount:1 };
 const DEFAULT_PASSWORD = '1535';
@@ -200,7 +201,7 @@ function apiChangePassword(pw, newPw) {
 function apiRestore(pw, data) {
   auth_(pw);
   return withLock_(() => {
-    Object.keys(TABLES).forEach(t => {
+    Object.keys(TABLES).filter(t => t !== 'activity').forEach(t => {
       const sh = sheet_(t), h = headers_(sh, t);
       const last = sh.getLastRow();
       if (last > 1) sh.getRange(2, 1, last - 1, Math.max(sh.getLastColumn(), h.length)).clearContent();
