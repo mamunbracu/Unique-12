@@ -25,19 +25,20 @@
  * "Unique Twelve Files". Profile photos are shared view-by-link so they can show in the dashboard.
  * ID cards and documents stay private. ID cards can only be opened with the admin password.
  *
- * Sheets are created automatically: members, payments, banks, expenses, assets, transfers, files, rules.
+ * Sheets are created automatically: members, payments, banks, expenses, assets, transfers, files, rules, income.
  * New columns added in future versions are appended automatically — your data is never moved.
  */
 
 const TABLES = {
   members:   ['id','memberNo','name','nameBn','fatherName','fatherNameBn','phone','email','joinDate','bankId','status','photo','occupation','share','nominee','nomineeBn','nomineeRelation','address','note'],
   payments:  ['id','memberId','month','amount','date','bankId','type','note'],
-  banks:     ['id','name','type','accountNo','branch','openingBalance','rate','openDate','maturity','note'],
+  banks:     ['id','name','type','accountNo','branch','openingBalance','rate','openDate','maturity','note','accountTitle','holders'],
   expenses:  ['id','date','category','amount','bankId','note'],
   assets:    ['id','name','type','date','cost','bankId','currentValue','status','saleDate','saleAmount','note'],
   transfers: ['id','date','fromBankId','toBankId','amount','note'],
   files:     ['id','fileId','name','mime','size','linkType','linkId','category','uploadedAt','url','note'],
-  rules:     ['id','section','order','titleEn','titleBn','textEn','textBn']
+  rules:     ['id','section','order','titleEn','titleBn','textEn','textBn'],
+  income:    ['id','date','category','amount','bankId','note']
 };
 const NUMERIC = { memberNo:1, share:1, size:1, order:1, amount:1, openingBalance:1, rate:1, cost:1, currentValue:1, saleAmount:1 };
 const DEFAULT_PASSWORD = '1535';

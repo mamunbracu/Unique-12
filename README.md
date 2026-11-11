@@ -8,10 +8,10 @@ It runs on Google Sheets, Google Drive and Google Apps Script, so storage and ho
 - `Code.gs` – Apps Script backend that stores everything in a Google Sheet and files in Google Drive.
 
 ## Features
-- Overview charts, ledger, banks & FDR, expenses, assets, reports, CSV/JSON backup, 5 themes
+- Overview charts, ledger, Finance tab (every account, holders, FDR projections, interest & income), expenses, assets, reports, CSV/JSON backup, 5 themes
 - 12 members with English + Bangla names, father's name, nominee, share %, photo
 - Payment calendar per member, late detection (due 1–5th) and late fines (Rule 3: 10% on the 6th, then ৳100/day)
-- Admin Quick Pay with automatic late fine
+- Admin Quick Pay: any year/month, down payments, and a Year Grid to pay many months at once (with automatic late fines)
 - Member and nominee ID card uploads (admin-only viewing)
 - Resolution (চুক্তিনামা / রেজুলেশন) in English and Bangla tabs, editable by the admin
 - Excel template + import for back-filling 2022 → today
