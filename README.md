@@ -7,7 +7,7 @@ Finance tracker for the Unique Twelve savings samity (12 members). It runs on Go
 - `Code.gs` – Apps Script backend that stores everything in a Google Sheet.
 
 ## Features
-Overview charts · member profiles with payment calendars · admin Quick Pay · ledger · banks & FDR · expenses · asset management · reports, CSV export, JSON/Drive backup · 5 themes · read-only member view with admin login (default password `1535`, change it in Settings).
+Overview charts · member profiles with photos and payment calendars · documents on Google Drive · admin Quick Pay · ledger · banks & FDR · expenses · asset management · reports, CSV export, JSON/Drive backup · 5 themes · read-only member view with admin login (default password `1535`, change it in Settings).
 
 ## Deploy (free)
 1. Create a Google Sheet → Extensions → Apps Script.

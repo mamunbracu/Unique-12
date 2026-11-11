@@ -14,18 +14,24 @@
  *    or start adding your real members, banks and payments.
  * 7. Change the admin password from Settings once you go live.
  *
+ * FILES: profile photos and documents are saved in your Google Drive, in a folder named
+ * "Unique Twelve Files" (subfolders: Profile Photos, Member, Asset, Expense, Bank / FDR, General).
+ * Profile photos are shared as view-by-link so they can show in the dashboard.
+ * Documents stay private and are only served through this web app.
+ *
  * After editing code later: Deploy → Manage deployments → ✏️ → Version: New version → Deploy.
  */
 
 const TABLES = {
-  members:   ['id','name','phone','email','joinDate','bankId','status','nominee','address','note'],
+  members:   ['id','name','phone','email','joinDate','bankId','status','photo','occupation','nominee','nomineeRelation','address','note'],
   payments:  ['id','memberId','month','amount','date','bankId','type','note'],
   banks:     ['id','name','type','accountNo','branch','openingBalance','rate','openDate','maturity','note'],
   expenses:  ['id','date','category','amount','bankId','note'],
   assets:    ['id','name','type','date','cost','bankId','currentValue','status','saleDate','saleAmount','note'],
-  transfers: ['id','date','fromBankId','toBankId','amount','note']
+  transfers: ['id','date','fromBankId','toBankId','amount','note'],
+  files:     ['id','fileId','name','mime','size','linkType','linkId','uploadedAt','url','note']
 };
-const NUMERIC = { amount:1, openingBalance:1, rate:1, cost:1, currentValue:1, saleAmount:1 };
+const NUMERIC = { size:1, amount:1, openingBalance:1, rate:1, cost:1, currentValue:1, saleAmount:1 };
 const DEFAULT_PASSWORD = '1535';
 
 /* ---------- web app ---------- */
@@ -38,6 +44,7 @@ function doGet() {
 
 function setup() {
   Object.keys(TABLES).forEach(sheet_);
+  folder_(); // creates the Drive folder and asks for Drive permission
   const p = PropertiesService.getScriptProperties();
   if (!p.getProperty('ADMIN_PASSWORD')) p.setProperty('ADMIN_PASSWORD', DEFAULT_PASSWORD);
   return 'Setup complete';
@@ -200,4 +207,46 @@ function installWeeklyBackup() {
 function weeklyBackup_() {
   DriveApp.createFile('Unique Twelve Auto Backup ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd') + '.json',
     JSON.stringify(apiLoad()), MimeType.PLAIN_TEXT);
+}
+
+/* ---------- Google Drive files ---------- */
+function folder_() {
+  const p = PropertiesService.getScriptProperties();
+  const id = p.getProperty('FOLDER_ID');
+  if (id) { try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) {} }
+  const f = DriveApp.createFolder('Unique Twelve Files');
+  p.setProperty('FOLDER_ID', f.getId());
+  return f;
+}
+
+function subfolder_(name) {
+  const root = folder_();
+  const it = root.getFoldersByName(name);
+  return it.hasNext() ? it.next() : root.createFolder(name);
+}
+
+function apiUpload(pw, b64, mime, name, kind, isPublic) {
+  auth_(pw);
+  if (!b64) throw new Error('Empty file');
+  const blob = Utilities.newBlob(Utilities.base64Decode(b64), mime || 'application/octet-stream', name || 'file');
+  const file = subfolder_(String(kind || 'General').replace(/[\\/]/g, '-')).createFile(blob);
+  if (isPublic) {
+    try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) { /* blocked by domain policy */ }
+  }
+  return { fileId: file.getId(), url: file.getUrl(), size: file.getSize() };
+}
+
+/* Serves a document to the dashboard. Only files registered in this samity's sheets can be read. */
+function apiGetFile(fileId) {
+  fileId = String(fileId || '');
+  const known = read_('files').some(f => f.fileId === fileId) || read_('members').some(m => m.photo === 'drive:' + fileId);
+  if (!known) throw new Error('File not found');
+  const blob = DriveApp.getFileById(fileId).getBlob();
+  return { mime: blob.getContentType(), b64: Utilities.base64Encode(blob.getBytes()), name: blob.getName() };
+}
+
+function apiTrashFile(pw, fileId) {
+  auth_(pw);
+  try { DriveApp.getFileById(String(fileId)).setTrashed(true); } catch (e) {}
+  return true;
 }
