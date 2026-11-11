@@ -39,9 +39,12 @@ const TABLES = {
   files:     ['id','fileId','name','mime','size','linkType','linkId','category','uploadedAt','url','note'],
   rules:     ['id','section','order','titleEn','titleBn','textEn','textBn'],
   income:    ['id','date','category','amount','bankId','note'],
+  loans:     ['id','memberId','date','amount','bankId','rate','months','purpose','status','note'],
+  loanPayments: ['id','loanId','date','amount','bankId','note'],
+  recons:    ['id','bankId','date','statementBalance','note'],
   activity:  ['id','at','by','action','table','summary','data']
 };
-const NUMERIC = { memberNo:1, share:1, size:1, order:1, amount:1, openingBalance:1, rate:1, cost:1, currentValue:1, saleAmount:1 };
+const NUMERIC = { months:1, statementBalance:1, memberNo:1, share:1, size:1, order:1, amount:1, openingBalance:1, rate:1, cost:1, currentValue:1, saleAmount:1 };
 const DEFAULT_PASSWORD = '1535';
 
 /* ---------- web app ---------- */
