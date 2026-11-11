@@ -4,7 +4,7 @@ service cloud.firestore {
 
     // ⚠️ Change this to YOUR admin email (lowercase), the same as ADMIN_EMAIL in index.html
     function isAdmin() {
-      return request.auth != null && request.auth.token.email == 'your-admin-email@gmail.com';
+      return request.auth != null && request.auth.token.email == 'unique122022@gmail.com';
     }
 
     // Uploaded files: ID cards are private (admin only); other documents are viewable by members
