@@ -337,6 +337,9 @@ body.admin .member-only{display:none!important}
 .chips{display:flex;flex-wrap:wrap;gap:4px}.chips span{padding:2px 9px;border-radius:99px;background:var(--input);border:1px solid var(--border);font-size:11.5px;font-weight:600}
 .b-norec{background:var(--input);color:var(--muted)}
 .bigbal{font-size:28px;font-weight:800;letter-spacing:-.5px}
+/* member photo tooltip */
+.mtip{position:absolute;z-index:150;pointer-events:none;background:var(--modal);border:1px solid var(--border);border-radius:16px;padding:12px 14px;box-shadow:0 14px 40px rgba(0,0,0,.35);opacity:0;transition:opacity .15s;max-width:320px}
+.av.tip{width:54px;height:54px;border-radius:16px;font-size:18px}
 /* compact top bar */
 .top{top:8px;padding:6px 10px;margin-bottom:14px;gap:8px}
 .top .ttl{flex:0 1 auto;min-width:0;max-width:170px}
@@ -625,7 +628,7 @@ function render(){_ts=undefined;
   buildNav();const[t,s]=TITLES[page];$('#pageTitle').textContent=t;$('#pageSub').textContent=s;
   $('#srcInfo').innerHTML=IS_FB?`<span><span class="dot"></span>Firebase · Live</span>`:IS_GAS?`<span><span class="dot"></span>Google Sheets · Live</span>`:`<span><span class="dot" style="background:var(--warn)"></span>Demo mode · Browser storage</span>`;
   $('#roleInfo').innerHTML=isAdmin?`<span class="good" style="font-weight:700">${icon('unlock')} Admin access</span>`:`<span>${icon('eye')} Member view (read-only)</span>`;
-  Object.values(charts).forEach(c=>{try{c.destroy()}catch(e){}});charts={};
+  Object.values(charts).forEach(c=>{try{c.destroy()}catch(e){}});charts={};const _mt=document.getElementById('mtip');if(_mt)_mt.style.opacity=0;
   $('#view').innerHTML=unsavedBanner()+PAGES[page]();(AFTER[page]||(()=>{}))();animateCounts();}
 function refresh(){render();modals.forEach(m=>{if(typeof m.body==='function')paintModal(m)})}
 function animateCounts(){$$('[data-count]').forEach(el=>{const to=+el.dataset.count,fmt=el.dataset.fmt||'tk',t0=performance.now(),d=900;const f=t=>{const p=Math.min(1,(t-t0)/d),e=1-Math.pow(1-p,3),v=to*e;el.textContent=fmt==='n'?Math.round(v):fmt==='pct'?Math.round(v)+'%':TK(v);if(p<1)requestAnimationFrame(f)};requestAnimationFrame(f)})}
@@ -757,6 +760,13 @@ function toggleThemePop(on){const p=$('#themePop');p.classList.toggle('on',on??!
 document.addEventListener('click',e=>{if(!e.target.closest('#themePop')&&!e.target.closest('#themeBtn'))$('#themePop').classList.remove('on')});
 
 /* ================= CHART HELPERS ================= */
+/* Member chart tooltip with the member's photo */
+function memberTip(ids){return ctx=>{const{chart,tooltip}=ctx;let el=document.getElementById('mtip');if(!el){el=document.createElement('div');el.id='mtip';el.className='mtip';document.body.appendChild(el)}
+  if(!tooltip||tooltip.opacity===0){el.style.opacity=0;return}const dp=tooltip.dataPoints&&tooltip.dataPoints[0];if(!dp)return;const m=DB.members.find(x=>x.id===ids[dp.dataIndex]);if(!m)return;
+  const tot=dp.dataset.data.reduce((a,b)=>a+(+b||0),0)||1,st=memberStats(m);
+  el.innerHTML=`<div class="who" style="gap:12px">${avatar(m,'tip')}<div><b style="font-size:14px">${esc(m.name)}</b>${m.nameBn?`<div class="sub" style="margin:0;font-family:'Hind Siliguri',sans-serif">${esc(m.nameBn)}</div>`:''}<div style="margin-top:4px;font-weight:800">${TK(dp.parsed)} <span class="muted" style="font-weight:600">· ${(dp.parsed/tot*100).toFixed(1)}% of fund</span></div><div class="sub" style="margin:2px 0 0">No. ${esc(m.memberNo||'—')} · ${st.paid+st.late} months paid${st.outstanding?` · <span class="bad">${TK(st.outstanding)} due</span>`:''}</div></div></div>`;
+  const r=chart.canvas.getBoundingClientRect(),w=el.offsetWidth||260;let x=r.left+window.scrollX+tooltip.caretX+16,y=r.top+window.scrollY+tooltip.caretY+16;if(x+w>window.scrollX+window.innerWidth-10)x=r.left+window.scrollX+tooltip.caretX-w-16;
+  el.style.left=x+'px';el.style.top=y+'px';el.style.opacity=1}}
 function mk(id,cfg){const c=document.getElementById(id);if(!c||!window.Chart)return;charts[id]=new Chart(c,cfg)}
 const tipTK={callbacks:{label:c=>' '+(c.dataset.label?c.dataset.label+': ':'')+TK(c.parsed.y??c.parsed)}};
 const baseOpts=(extra={})=>({responsive:true,maintainAspectRatio:false,animation:{duration:900,easing:'easeOutQuart'},plugins:{legend:{labels:{usePointStyle:true,boxWidth:8,padding:14}},tooltip:{...tipTK,backgroundColor:cv('--modal'),titleColor:cv('--text'),bodyColor:cv('--text'),borderColor:cv('--border'),borderWidth:1,padding:10,cornerRadius:10}},...extra});
@@ -788,7 +798,7 @@ AFTER.overview=()=>{const s=cashSeries();
   const ms=monthsBetween(addMonth(curMonth(),-17),curMonth());const mo=m=>sum(DB.payments.filter(p=>p.month===m&&isMon(p)),p=>p.amount),dn=m=>sum(DB.payments.filter(p=>p.month===m&&p.type==='Down Payment'),p=>p.amount);
   mk('cMonthly',{type:'bar',data:{labels:ms.map(mLabelS),datasets:[{label:'Monthly',data:ms.map(mo),backgroundColor:alpha(cv('--accent'),.85),borderRadius:6,stack:'a'},{label:'Down Payment',data:ms.map(dn),backgroundColor:alpha(cv('--accent2'),.85),borderRadius:6,stack:'a'}]},options:baseOpts({scales:{y:{...yTK,stacked:true},x:{stacked:true,grid:{display:false}}}})});
   const mt=DB.members.map(m=>sum(DB.payments.filter(p=>p.memberId===m.id),p=>p.amount));
-  mk('cMembers',doughnut(DB.members.map(m=>m.name),mt,DB.members.map((m,i)=>mColor(i))));
+  const mcfg=doughnut(DB.members.map(m=>m.name),mt,DB.members.map((m,i)=>mColor(i)));mcfg.options.plugins.tooltip={enabled:false,external:memberTip(DB.members.map(m=>m.id))};mk('cMembers',mcfg);
   const bs=DB.banks.map(b=>({n:b.name,v:bankBalance(b.id)})).filter(b=>b.v!==0);
   mk('cBanks',{type:'bar',data:{labels:bs.map(b=>b.n),datasets:[{label:'Balance',data:bs.map(b=>b.v),backgroundColor:bs.map((b,i)=>alpha(PAL()[i%8],.85)),borderRadius:8}]},options:baseOpts({indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+TK(c.parsed.x)}}},scales:{x:{ticks:{callback:v=>TKs(v)},grid:{color:alpha(cv('--muted'),.12)}},y:{grid:{display:false}}}})})};
 
