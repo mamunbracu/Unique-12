@@ -30,8 +30,8 @@
  */
 
 const TABLES = {
-  members:   ['id','memberNo','name','nameBn','fatherName','fatherNameBn','phone','email','joinDate','bankId','status','photo','occupation','share','nominee','nomineeBn','nomineeRelation','address','note'],
-  payments:  ['id','memberId','month','amount','date','bankId','type','note'],
+  members:   ['id','memberNo','name','nameBn','fatherName','fatherNameBn','phone','email','joinDate','bankId','status','photo','occupation','share','nominee','nomineeBn','nomineeRelation','address','note','soActive','soDay','soBankId','soAmount','payMethod','payFromBank','payFromAccount'],
+  payments:  ['id','memberId','month','amount','date','bankId','type','note','method','fromBank','fromAccount','toAccount','ref'],
   banks:     ['id','name','type','accountNo','branch','openingBalance','rate','openDate','maturity','note','accountTitle','holders'],
   expenses:  ['id','date','category','amount','bankId','note'],
   assets:    ['id','name','type','date','cost','bankId','currentValue','status','saleDate','saleAmount','note'],
