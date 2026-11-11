@@ -1,37 +1,45 @@
 /**
  * UNIQUE TWELVE – Samity Finance Tracker
- * Free, permanent backend: Google Sheets + Google Apps Script
+ * Free, permanent backend: Google Sheets + Google Drive + Google Apps Script
+ *
+ * WHAT YOU NEED: only a Google (Gmail) account. No API keys, no billing, no server.
  *
  * SETUP (one time, ~5 minutes)
- * 1. Create a new Google Sheet (name it "Unique Twelve Database").
- * 2. Extensions → Apps Script. Delete the sample code and paste this whole file into Code.gs.
- * 3. Click  +  → HTML, name it exactly:  Index   → paste the whole Index.html file into it.
- * 4. Select the function "setup" in the toolbar and click ▶ Run. Allow the permissions it asks for.
- * 5. Deploy → New deployment → type "Web app"
- *      Execute as: Me      Who has access: Anyone (or "Anyone with Google account")
- *    Click Deploy and copy the Web app URL. That URL is your dashboard — share it with members.
- * 6. Open the URL → Admin Login (password 1535) → Settings → "Load demo data" to try it,
- *    or start adding your real members, banks and payments.
- * 7. Change the admin password from Settings once you go live.
+ * 1. Go to sheets.google.com → create a blank sheet → name it "Unique Twelve Database".
+ * 2. In that sheet: Extensions → Apps Script. Delete the sample code and paste this whole file.
+ * 3. In Apps Script click  +  → HTML → name it exactly:  Index   → paste the whole Index.html into it.
+ * 4. Click 💾 Save. In the toolbar pick the function "setup" and click ▶ Run.
+ *    Google asks for permission → Review permissions → choose your account →
+ *    "Advanced" → "Go to project (unsafe)" → Allow. (It is your own script, so this is normal.)
+ * 5. Deploy → New deployment → ⚙ Select type: Web app
+ *      Description: Unique Twelve      Execute as: Me      Who has access: Anyone
+ *    Click Deploy → copy the Web app URL. That URL is your dashboard — share it with members.
+ * 6. Open the URL → Admin Login (password 1535). The first time, it offers to create the 12 members
+ *    and the resolution with all balances at ৳0.
+ * 7. Change the admin password in Settings.
  *
- * FILES: profile photos and documents are saved in your Google Drive, in a folder named
- * "Unique Twelve Files" (subfolders: Profile Photos, Member, Asset, Expense, Bank / FDR, General).
- * Profile photos are shared as view-by-link so they can show in the dashboard.
- * Documents stay private and are only served through this web app.
+ * UPDATING LATER: paste the new code → Save → Deploy → Manage deployments → ✏️ Edit →
+ *   Version: "New version" → Deploy. (The URL stays the same.)
  *
- * After editing code later: Deploy → Manage deployments → ✏️ → Version: New version → Deploy.
+ * FILES: photos, ID cards and documents are saved in your Google Drive in a folder named
+ * "Unique Twelve Files". Profile photos are shared view-by-link so they can show in the dashboard.
+ * ID cards and documents stay private. ID cards can only be opened with the admin password.
+ *
+ * Sheets are created automatically: members, payments, banks, expenses, assets, transfers, files, rules.
+ * New columns added in future versions are appended automatically — your data is never moved.
  */
 
 const TABLES = {
-  members:   ['id','name','phone','email','joinDate','bankId','status','photo','occupation','nominee','nomineeRelation','address','note'],
+  members:   ['id','memberNo','name','nameBn','fatherName','fatherNameBn','phone','email','joinDate','bankId','status','photo','occupation','share','nominee','nomineeBn','nomineeRelation','address','note'],
   payments:  ['id','memberId','month','amount','date','bankId','type','note'],
   banks:     ['id','name','type','accountNo','branch','openingBalance','rate','openDate','maturity','note'],
   expenses:  ['id','date','category','amount','bankId','note'],
   assets:    ['id','name','type','date','cost','bankId','currentValue','status','saleDate','saleAmount','note'],
   transfers: ['id','date','fromBankId','toBankId','amount','note'],
-  files:     ['id','fileId','name','mime','size','linkType','linkId','uploadedAt','url','note']
+  files:     ['id','fileId','name','mime','size','linkType','linkId','category','uploadedAt','url','note'],
+  rules:     ['id','section','order','titleEn','titleBn','textEn','textBn']
 };
-const NUMERIC = { size:1, amount:1, openingBalance:1, rate:1, cost:1, currentValue:1, saleAmount:1 };
+const NUMERIC = { memberNo:1, share:1, size:1, order:1, amount:1, openingBalance:1, rate:1, cost:1, currentValue:1, saleAmount:1 };
 const DEFAULT_PASSWORD = '1535';
 
 /* ---------- web app ---------- */
@@ -43,10 +51,10 @@ function doGet() {
 }
 
 function setup() {
-  Object.keys(TABLES).forEach(sheet_);
-  folder_(); // creates the Drive folder and asks for Drive permission
+  Object.keys(TABLES).forEach(t => headers_(sheet_(t), t));
   const p = PropertiesService.getScriptProperties();
   if (!p.getProperty('ADMIN_PASSWORD')) p.setProperty('ADMIN_PASSWORD', DEFAULT_PASSWORD);
+  folder_(); // creates the Drive folder and asks for Drive permission
   return 'Setup complete';
 }
 
@@ -64,6 +72,21 @@ function sheet_(name) {
     sh.getRange(1, 1, sh.getMaxRows(), h.length).setNumberFormat('@'); // keep dates/months as plain text
   }
   return sh;
+}
+
+/* Returns the sheet's header row, appending any columns this version needs that are missing. */
+function headers_(sh, t) {
+  const lastCol = Math.max(sh.getLastColumn(), 1);
+  const raw = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+  let n = raw.length; while (n > 0 && raw[n - 1] === '') n--;
+  const have = raw.slice(0, n);
+  const missing = TABLES[t].filter(k => have.indexOf(k) < 0);
+  if (missing.length) {
+    sh.getRange(1, n + 1, 1, missing.length).setValues([missing]).setFontWeight('bold').setBackground('#1e293b').setFontColor('#ffffff');
+    sh.getRange(1, n + 1, sh.getMaxRows(), missing.length).setNumberFormat('@');
+    return have.concat(missing);
+  }
+  return have;
 }
 
 function password_() {
@@ -87,17 +110,16 @@ function cell_(k, v) {
 }
 
 function read_(t) {
-  const sh = sheet_(t);
+  const sh = sheet_(t), h = headers_(sh, t);
   const last = sh.getLastRow();
   if (last < 2) return [];
-  const h = TABLES[t];
   return sh.getRange(2, 1, last - 1, h.length).getValues()
     .filter(r => r[0] !== '')
-    .map(r => { const o = {}; h.forEach((k, i) => o[k] = cell_(k, r[i])); return o; });
+    .map(r => { const o = {}; h.forEach((k, i) => { if (k) o[k] = cell_(k, r[i]); }); return o; });
 }
 
-function row_(t, rec) {
-  return TABLES[t].map(k => {
+function row_(h, rec) {
+  return h.map(k => {
     const v = rec[k];
     if (NUMERIC[k]) return Number(v) || 0;
     return v === null || v === undefined ? '' : String(v);
@@ -134,17 +156,17 @@ function apiSave(pw, t, rec) { return apiSaveMany(pw, t, [rec]); }
 function apiSaveMany(pw, t, recs) {
   auth_(pw); checkTable_(t);
   return withLock_(() => {
-    const sh = sheet_(t), idx = idIndex_(sh), toAppend = [];
+    const sh = sheet_(t), h = headers_(sh, t), idx = idIndex_(sh), toAppend = [];
     recs.forEach(rec => {
       if (!rec.id) throw new Error('Record has no id');
-      const values = row_(t, rec);
+      const values = row_(h, rec);
       const r = idx[String(rec.id)];
       if (r) sh.getRange(r, 1, 1, values.length).setValues([values]);
       else toAppend.push(values);
     });
     if (toAppend.length) {
       const start = sh.getLastRow() + 1;
-      sh.getRange(start, 1, toAppend.length, toAppend[0].length).setNumberFormat('@').setValues(toAppend);
+      sh.getRange(start, 1, toAppend.length, h.length).setNumberFormat('@').setValues(toAppend);
     }
     return true;
   });
@@ -178,10 +200,10 @@ function apiRestore(pw, data) {
   auth_(pw);
   return withLock_(() => {
     Object.keys(TABLES).forEach(t => {
-      const sh = sheet_(t), h = TABLES[t];
+      const sh = sheet_(t), h = headers_(sh, t);
       const last = sh.getLastRow();
-      if (last > 1) sh.getRange(2, 1, last - 1, sh.getLastColumn()).clearContent();
-      const rows = (data[t] || []).map(r => row_(t, r));
+      if (last > 1) sh.getRange(2, 1, last - 1, Math.max(sh.getLastColumn(), h.length)).clearContent();
+      const rows = (data[t] || []).map(r => row_(h, r));
       if (rows.length) sh.getRange(2, 1, rows.length, h.length).setNumberFormat('@').setValues(rows);
     });
     if (data.settings) {
@@ -195,7 +217,7 @@ function apiRestore(pw, data) {
 function apiBackupToDrive(pw, json) {
   auth_(pw);
   const name = 'Unique Twelve Backup ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH-mm') + '.json';
-  const f = DriveApp.createFile(name, json, MimeType.PLAIN_TEXT);
+  const f = subfolder_('Backups').createFile(name, json, MimeType.PLAIN_TEXT);
   return f.getUrl();
 }
 
@@ -205,7 +227,7 @@ function installWeeklyBackup() {
   ScriptApp.newTrigger('weeklyBackup_').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(2).create();
 }
 function weeklyBackup_() {
-  DriveApp.createFile('Unique Twelve Auto Backup ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd') + '.json',
+  subfolder_('Backups').createFile('Unique Twelve Auto Backup ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd') + '.json',
     JSON.stringify(apiLoad()), MimeType.PLAIN_TEXT);
 }
 
@@ -236,11 +258,14 @@ function apiUpload(pw, b64, mime, name, kind, isPublic) {
   return { fileId: file.getId(), url: file.getUrl(), size: file.getSize() };
 }
 
-/* Serves a document to the dashboard. Only files registered in this samity's sheets can be read. */
-function apiGetFile(fileId) {
+/* Serves a file to the dashboard. Only files registered in this samity's sheets can be read,
+   and ID cards (category member-id / nominee-id) need the admin password. */
+function apiGetFile(fileId, pw) {
   fileId = String(fileId || '');
-  const known = read_('files').some(f => f.fileId === fileId) || read_('members').some(m => m.photo === 'drive:' + fileId);
-  if (!known) throw new Error('File not found');
+  const rec = read_('files').filter(f => f.fileId === fileId)[0];
+  const isPhoto = !rec && read_('members').some(m => m.photo === 'drive:' + fileId);
+  if (!rec && !isPhoto) throw new Error('File not found');
+  if (rec && /-id$/.test(rec.category || '')) auth_(pw);
   const blob = DriveApp.getFileById(fileId).getBlob();
   return { mime: blob.getContentType(), b64: Utilities.base64Encode(blob.getBytes()), name: blob.getName() };
 }
