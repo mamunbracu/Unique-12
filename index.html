@@ -407,6 +407,15 @@ body.admin .member-only{display:none!important}
 .switch-row .sw::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 4px rgba(0,0,0,.3)}.switch-row input:checked+.sw{background:var(--good)}.switch-row input:checked+.sw::after{transform:translateX(20px)}
 .switch-row small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 @media(max-width:560px){.stabs{gap:4px;padding:5px}.stab{padding:7px 10px;font-size:12px;gap:5px}.stab svg{width:14px;height:14px}}
+/* local action loader */
+.act-loader{position:fixed;z-index:950;display:flex;align-items:center;gap:10px;padding:9px 16px 9px 9px;border-radius:999px;background:var(--modal);border:1px solid var(--border);box-shadow:0 16px 40px -12px rgba(0,0,0,.6);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);opacity:0;transform:scale(.85);transition:opacity .2s,transform .25s cubic-bezier(.2,.9,.25,1.2);pointer-events:none;--al:var(--accent)}
+.act-loader.show{opacity:1;transform:scale(1)}.act-loader.k-create{--al:var(--good)}.act-loader.k-delete{--al:var(--bad)}.act-loader.k-update{--al:var(--accent)}
+.al-ring{position:relative;width:38px;height:38px;flex-shrink:0}.al-ring svg{width:100%;height:100%;animation:alspin 1.1s linear infinite}
+.al-ring circle{fill:none;stroke-width:4.5;stroke-linecap:round}.al-bg{stroke:color-mix(in srgb,var(--al) 18%,transparent)}.al-fg{stroke:var(--al);stroke-dasharray:90 150;animation:aldash 1.4s ease-in-out infinite}
+.al-ic{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--al)}.al-ic svg{width:15px;height:15px;animation:alpulse 1s ease-in-out infinite}
+.al-txt b{display:block;font-size:13.5px;color:var(--text)}.al-txt small{display:block;font-size:11px;color:var(--muted);text-transform:capitalize}
+@keyframes alspin{to{transform:rotate(360deg)}}@keyframes aldash{0%{stroke-dasharray:1 150;stroke-dashoffset:0}50%{stroke-dasharray:90 150;stroke-dashoffset:-35}100%{stroke-dasharray:90 150;stroke-dashoffset:-124}}@keyframes alpulse{50%{transform:scale(.8);opacity:.6}}
+.act-busy{position:relative;opacity:.55;transition:opacity .2s;pointer-events:none}tr.act-busy{animation:abpulse 1.1s ease-in-out infinite}@keyframes abpulse{50%{opacity:.35}}
 /* payment proof + reset */
 .ppbox{border:1px dashed var(--border);border-radius:14px;padding:12px;background:color-mix(in srgb,var(--accent) 6%,transparent)}
 .pp-head{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}.pp-ex{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
@@ -565,8 +574,21 @@ function normalize(d){d=d||{};const o={};['members','payments','banks','expenses
 function errMsg(e){return(e&&(e.message||e.toString()))||'Unknown error'}
 function busy(on){$('#busy').classList.toggle('on',on)}
 function guard(){if(!isAdmin){openLogin();return false}if(DB._unsaved){firstSetup();return false}return true}
-let writeN=0;
-async function run(fn,okMsg){busy(true);writeN++;try{await fn();persist();window.__lastWrite=Date.now();const synced=await syncDB();refresh();if(okMsg)toast(okMsg+(synced?' · synced with the database ✓':''));return true}catch(e){toast('Failed: '+errMsg(e),'bad');try{await syncDB();refresh()}catch(_){}return false}finally{busy(false)}}
+let writeN=0,pendingKind='',pendingT='',actOrigin=null;
+document.addEventListener('pointerdown',e=>{const t=e.target;if(!t.closest||t.closest('#cfY,#ctY,#ctw,.cfbox'))return;actOrigin=t.closest('button,a,.btn,tr,.card,label,.li')||t},true);
+document.addEventListener('submit',e=>{const b=e.target.querySelector('button.primary:last-of-type,button[type=submit]')||e.target;if(!actOrigin||!e.target.contains(actOrigin))actOrigin=b},true);
+const ACT_TXT={create:['Adding','plus'],update:['Updating','edit'],delete:['Deleting','trash']};
+function showLoader(kind){const[txt,ic]=ACT_TXT[kind]||['Saving','check'];const what=(TLABEL&&TLABEL[pendingT])||'';
+  const el=document.createElement('div');el.className='act-loader k-'+(kind||'save');el.innerHTML=`<div class="al-ring"><svg viewBox="0 0 50 50"><circle class="al-bg" cx="25" cy="25" r="20"/><circle class="al-fg" cx="25" cy="25" r="20"/></svg><span class="al-ic">${icon(ic)}</span></div><div class="al-txt"><b>${txt}…</b>${what?`<small>${esc(what)}</small>`:''}</div>`;
+  document.body.appendChild(el);
+  let a=actOrigin&&actOrigin.isConnected?actOrigin:null;if(a&&a.closest('.overlay')==null&&modals.length)a=modals[modals.length-1].el.querySelector('.modal')||a;
+  if(!a&&modals.length)a=modals[modals.length-1].el.querySelector('.modal');
+  const host=a&&(a.closest('tr')||a.closest('.li')||a.closest('.modal')||a.closest('.card')||a);if(host)host.classList.add('act-busy');
+  const W=el.offsetWidth,H=el.offsetHeight,vw=innerWidth,vh=innerHeight;let x=vw/2-W/2,y=vh/2-H/2;
+  if(a){const r=a.getBoundingClientRect();if(r.width&&r.height&&r.bottom>0&&r.top<vh){x=r.left+r.width/2-W/2;y=r.top+r.height/2-H/2}}
+  el.style.left=Math.max(8,Math.min(vw-W-8,x))+'px';el.style.top=Math.max(8,Math.min(vh-H-8,y))+'px';requestAnimationFrame(()=>el.classList.add('show'));
+  const t0=Date.now();return()=>{const done=()=>{el.classList.remove('show');setTimeout(()=>el.remove(),250);if(host)host.classList.remove('act-busy')};const w=Math.max(0,550-(Date.now()-t0));setTimeout(done,w)}}
+async function run(fn,okMsg){busy(true);writeN++;const hide=showLoader(pendingKind);pendingKind='';try{await fn();persist();window.__lastWrite=Date.now();const synced=await syncDB();refresh();if(okMsg)toast(okMsg+(synced?' · synced with the database ✓':''));return true}catch(e){toast('Failed: '+errMsg(e),'bad');try{await syncDB();refresh()}catch(_){}return false}finally{busy(false);hide()}}
 async function syncDB(){if(!LIVE)return false;try{const d=await API.load();if(!d)return false;applyLoaded(d);return true}catch(e){console.warn('sync failed',e);return false}}
 function applyLoaded(d){const n=normalize(d);if(!n.members.length&&!n.rules.length)return;const keepPw=DB.settings&&DB.settings.adminPassword;Object.keys(n).forEach(k=>{if(k!=='activity'||n.activity.length)DB[k]=n[k]});if(keepPw&&!DB.settings.adminPassword)DB.settings.adminPassword=keepPw;delete DB._unsaved}
 let liveT=null,livePend=false,liveUnsub=[];
@@ -718,7 +740,7 @@ function confirmTyped(msg,word='DELETE'){return new Promise(res=>{let done=false
 function confirmBox(msg,yes='Delete',danger=true){return new Promise(res=>{let done=false;
   openModal('Please confirm',`<p style="line-height:1.6">${msg}</p><div class="modal-actions"><button class="btn ghost" id="cfN">Cancel</button><button class="btn ${danger?'danger':'primary'}" id="cfY">${yes}</button></div>`,{after:b=>{b.querySelector('#cfN').onclick=()=>closeModal();b.querySelector('#cfY').onclick=()=>{done=true;askFree=true;closeModal();res(true)}},onClose:()=>{if(!done)res(false)}})})}
 let askFree=false;const askYes=(msg,yes='Yes, save')=>askFree||window.__autoYes?Promise.resolve(true):confirmBox(msg,yes,false);['click','keydown'].forEach(ev=>document.addEventListener(ev,e=>{if(!(e.target.closest&&e.target.closest('#cfY,#ctY,#ctw,a[download]')))askFree=false},true));
-async function askWrite(kind,t,recs){if(askFree||window.__autoYes)return true;const n=recs.length,lab=(TLABEL[t]||'record').toLowerCase(),list=recs.slice(0,6).map(r=>`<li>${esc(describe(t,r))}</li>`).join('')+(n>6?`<li>…and ${n-6} more</li>`:'');
+async function askWrite(kind,t,recs){pendingKind=kind;pendingT=t;if(askFree||window.__autoYes)return true;const n=recs.length,lab=(TLABEL[t]||'record').toLowerCase(),list=recs.slice(0,6).map(r=>`<li>${esc(describe(t,r))}</li>`).join('')+(n>6?`<li>…and ${n-6} more</li>`:'');
   const q=kind==='delete'?`Are you sure you want to <b>delete</b> ${n>1?n+' '+lab+'s':'this '+lab}?`:kind==='update'?`Are you sure you want to <b>save the changes</b> to ${n>1?n+' '+lab+'s':'this '+lab}?`:`Are you sure you want to <b>add</b> ${n>1?n+' '+lab+'s':'this '+lab}?`;
   return confirmBox(`${q}<ul style="margin:10px 0 0 18px;line-height:1.7">${list}</ul>`,kind==='delete'?'Yes, delete':kind==='update'?'Yes, save':'Yes, add',kind==='delete')}
 function monthPick(name,val,blank,cls=''){const y0=2010,y1=+todayStr().slice(0,4)+2,[vy,vm]=String(val||'').split('-');
